@@ -1,0 +1,468 @@
+{@module
+Author=YurAnt
+Version=0.1
+Description=Фишки-плюшки для работы с гео-кодированием и картами.
+@}
+
+type
+TGeoPoint=record
+	x:double;
+	y:double;
+end;
+
+function LLFormat(nn:integer):integer;
+var i:integer;
+s,n:string;
+begin
+s:=IntToStr(nn)
+n:='';
+if Length(s)<8 then
+begin
+for i := 1 to 8-Length(s) do
+  begin
+   n:=n+'0';
+  end;
+end;
+result:=StrToInt(s+n);
+end;
+
+function CleanTags(Str:string):string;
+Var
+  s: String;
+  i,j: Integer;
+Begin
+s:=Str;
+  i:=Pos('[[',s);
+  While i<>0 Do
+  Begin
+  j:=Pos('[[',s);
+  Delete(S,j,1);
+  i:=Pos('[[',s);
+  End;
+  i:=Pos(']]',s);
+  While i<>0 Do
+  Begin
+  j:=Pos(']]',s);
+  Delete(S,j,1);
+  i:=Pos(']]',s);
+  End;
+  Result:=Trim(S);
+End;
+
+function DeleteEmptyItems(LS:TStrings):TStrings;
+var i:integer;
+begin
+for i:=LS.Count-1 downto 0 do
+  begin
+    if Length(trim(LS.Strings[i]))=0
+    then LS.Delete(i);
+  end;
+result:=LS;
+end;
+
+  function IsCoordinates(const s: String): Boolean;
+  var i, lens,lenrs: Integer;
+  rs:string;
+  begin
+    lens := Length(s);
+    if lens > 0 then begin
+    rs:=StringReplace(s,',','',[rfReplaceAll]);
+    rs:=StringReplace(rs,'.','',[rfReplaceAll]);
+    lenrs := Length(rs);
+      Result := True;
+      for i := 1 to lenrs do
+        if not (rs[i] in ['0','1','2','3','4',
+        '5','6','7','8','9']) then
+        begin
+          Result := False;
+          break;
+        end;
+    end
+    else
+      Result := False;
+  end;
+
+
+
+
+{******************************************************************************
+  ПОЛУЧЕНИЕ КООРДИНАТ ПО АДРЕСУ. Ответ: текст вида "ДД.ДДДДДД,ШШ.ШШШШШШ"
+*******************************************************************************}
+
+{@function
+OrigName=GET_COORDINATES
+Name=GET_COORDINATES
+Args=v
+Result=s
+Group=Гео-функции
+Description=<b><font color="#800000">Функция поиска координат на <font color="#FF0000">Я</font>
+<font color="#000000">ндекс</font>-карте по полному или частично введенному адресу.<br></b>
+<font color="#FF0000">Для работы функции требуется подключение к Интернет.</font></font>
+<br> <br><code><b>GET_COORDINATES(</b><font color="#008000">'Адрес'</font>)</code> <br><br>
+<b>Параметр:</b> Текст. <br><br>
+<i>Адрес (часть адреса) в произвольном формате.</i><br><br>
+<b>Результат:</b>текст<br><br>
+Координаты формата: <code><font color="#008000">'Ши.рота,До.лгота'</font></code>
+<br><br><b>Примеры:</b><br><br>
+<code><b>GET_COORDINATES(</b><font color="#008000">'веселая жизнь северная 5'</font>)</code> <br>
+<code><b>GET_COORDINATES(</b><font color="#008000">'моссвка теврская 1'</font>)</code> <br>
+<i><font color="#808080">// ошибки сервис Яндекс-карт исправляет автоматически</font> </i>
+<br><b><font color="#0000D7"><br><br>
+Примечание:</font></b><br><br>
+<i><font color="#FF0000">Точность результата зависит от запроса:</font>
+<br>Для поиска координат места адреса в городе рекомендуется запрашивать
+<code><font color="#0000FF"><b>город улица дом.</b></font></code><br>
+Для поиска адреса в селе рекомендуется запрашивать
+<code><font color="#0000FF"><b>край/область село улица дом.</b></font></code><br>
+ </i>
+@}
+
+function Get_Coordinates(Addr:variant):string;
+  var
+  strResponseText,TmpRes:string;
+  objWinHttp,xDoc:variant;
+begin
+if Addr=null then
+  begin
+    debug(#13#10+'GetCoordinates:'+#13#10+'Не указан адрес для поиска.');
+    exit;
+  end;
+try
+  objWinHttp := CreateOleObject('MSXML2.ServerXMLHTTP');
+  objWinHttp.Open('GET', 'https://geocode-maps.yandex.ru/1.x/?geocode='+Addr+'&results=1',false);
+  objWinHttp.Send;
+  strResponseText:=objWinHttp.ResponseText;
+ // debug(strResponseText);
+      try
+      xDoc:=CreateOleObject('MSXML2.DOMDocument');
+      xDoc.async := false;
+      xDoc.validateOnParse := False;
+    // debug(strResponseText)
+      xDoc.LoadXML(strResponseText);
+      If VarIsNothing(objWinHttp.ResponseXML.selectSingleNode('//Point/pos')) = true then
+        begin
+          debug(#13#10+'GetCoordinates:'+#13#10+'Результат отсутствует. Попробуйте уточнить параметры поиска.');
+          xDoc:=Unassigned;
+          objWinHttp:=Unassigned;
+          Result:='';
+          exit;
+        end;
+      TmpRes:=objWinHttp.ResponseXML.selectSingleNode('//Point/pos').text;
+      TmpRes:=StringReplace(TmpRes,' ',';',[]);
+      Result:=EvalExpr('IndexOf(1,"'+TmpRes+'")+", "+IndexOf(0,"'+TmpRes+'")',nil)
+      finally
+        xDoc:=Unassigned;
+      except;
+        debug(ExceptionParam);
+        xDoc:=Unassigned;
+      end;
+  finally
+  objWinHttp:=Unassigned;
+  except;
+  debug(ExceptionParam);
+  objWinHttp:=Unassigned;
+ end;
+end;
+
+
+{******************************************************************************
+    ПОЛУЧЕНИЕ ПОДРОБНОСТЕЙ АДРЕСА ПО КООРДИНАТАМ (ОБРАТНОЕ ГЕОКОДИРОВАНИЕ)
+    // район
+*******************************************************************************}
+
+function GetDistrict_Area(Area:variant):string;
+  var
+  strResponseText:string;
+  objWinHttp,xDoc:variant;
+begin
+if Area=null then
+  begin
+    debug(#13#10+'GetDistrict:'+#13#10+'Не указаны координаты для поиска.');
+    exit;
+  end;
+try
+  objWinHttp := CreateOleObject('MSXML2.ServerXMLHTTP');
+  objWinHttp.Open('GET', 'https://geocode-maps.yandex.ru/1.x/?geocode='+Area+'&kind=district',false);
+  objWinHttp.Send;
+  strResponseText:=objWinHttp.ResponseText;
+      try
+      xDoc:=CreateOleObject('MSXML2.DOMDocument');
+      xDoc.async := false;
+      xDoc.validateOnParse := False;
+      xDoc.LoadXML(strResponseText);
+      If VarIsNothing(objWinHttp.ResponseXML.selectSingleNode('//DependentLocalityName')) = true then
+        begin
+          debug(#13#10+'GetDistrict:'+#13#10+'Результат отсутствует. Попробуйте уточнить параметры поиска.');
+          xDoc:=Unassigned;
+          objWinHttp:=Unassigned;
+          Result:='';
+          exit;
+        end;
+      Result:=objWinHttp.ResponseXML.selectSingleNode('//DependentLocalityName').text;
+      finally
+      xDoc:=Unassigned;
+      except;
+      debug(ExceptionParam);
+      xDoc:=Unassigned;
+      end;
+  finally
+  objWinHttp:=Unassigned;
+  except;
+    debug(ExceptionParam);
+    objWinHttp:=Unassigned;
+ end;
+
+end;
+
+{******************************************************************************
+   ПРОВЕРКА НАХОЖДЕНИЯ ОДНОЙ TGEOPOINT-ТОЧКИ В ПОЛИГОНЕ ПОСТРОЕННОМ ИЗ МАССИВА
+   TPOINT
+*******************************************************************************}
+
+function CheckFloatPointInPolygon(p:TGeoPoint;PtBorders:array of TGeoPoint): boolean;
+var
+ i,n: integer;
+ x,y:Double;
+begin
+ x:=p.x;
+ y:=p.y;
+ i := 0;
+ n := Length(PtBorders) - 1;
+ Result := False;
+ repeat
+  if not ((y > PtBorders[i].Y) xor (y <= PtBorders[i + 1].Y)) then
+   if x - PtBorders[i].X < (y - PtBorders[i].Y) * (PtBorders[i + 1].X - PtBorders[i].X) /
+    (PtBorders[i + 1].Y - PtBorders[i].Y) then
+    Result := not Result;
+  i := i + 1;
+ until i >= n;
+end;
+
+{******************************************************************************
+   КОНВЕРТАЦИЯ КООРДИНАТ формата: "ДД.ДДДДДД,ШШ.ШШШШШШ" в TPoint вида:
+   x = ДДДДДДДД
+   y = ШШШШШШШШ
+*******************************************************************************}
+
+function GeoToFloatPoint(v:variant):TGeoPoint; // x долгота, y широта
+var p:TGeoPoint;
+s:string;
+begin
+if v=null then
+begin
+ debug(#13#10+'GeoToFloatPoint:'+#13#10+'Не указаны координаты для поиска.');
+ exit;
+end;
+s:=VarToStr(v);
+p.x:=StrToFloat(Copy(s,1,Pos(',',s)-1));
+p.y:=StrToFloat(Copy(s,Pos(',',s)+1,Length(s)-Pos(',',s)+1));
+result:=p;
+end;
+
+{******************************************************************************
+                                  ФУНКЦИЯ
+*******************************************************************************}
+
+{@function
+OrigName=FIND_PT_IN_POLYGON
+Name=FIND_PT_IN_POLYGON
+Args=vv
+Result=b
+Group=Гео-функции
+Description=<font color="#800000"><b>Функция для проверки вхождения одной координаты в
+полигон, состоящий из массива координат.<br>Может применяться для поиска
+объекта в заданной зоне.
+</b></font><br><br><code><b>FIND_PT_IN_POLYGON(<font color="#008040">
+'Список координат границ полигона'</font>,<font color="#008040">
+'Координаты искомой точки'</font>)</code><br><br><b>
+Параметры:</b><br><br>
+<b>1. Текст</b> <br><br><i>Список координат формата: <br><code><font color="#008040">'[Ши.рота1,До.лгота1],
+[Ши.рота2,До.лгота2], [Ши.рота3,До.лгота3]...'</font></code>,<br>
+представляющих из себя замкнутую фигуру <font color="#FF0000">без пересечения
+выстраиваемых линий полигона.</font></i><br><br>
+<b>2. Текст</b><br><br>
+<i>Координаты в формате: <font color="#008040">'Ши.рота,До.лгота'</i></font><br><br>
+<b>Результат:</b> булево<br><br>
+<b><font color="#0000FF">true</font></b> <i>(истина)</i> - результат, если точка координат
+присутствует в указанном полигоне<br>
+<b>  <font color="#F00000">false</font></b> <i>(ложь)</i> - результат, если точка координат
+отсутствует в указанном полигоне<br><br><hr></hr>
+</font><br><br><b>Пример:</b><br><br><code><b>FIND_PT_IN_POLYGON(</b>
+<font color="#008000">'<br>
+[55.79076368039028,37.29387644726568],<br>
+[55.938265134637064,37.46691111523443],<br>
+[55.9305564946382,37.71135691601567],<br>
+[55.77838199427918,37.92009715039068],<br>
+[55.617837378362175,37.91185740429692],<br>
+[55.542378292612014,37.66329173046879],<br>
+[55.59451507371311,37.449058332031285],<br>
+[55.79076368039028,37.29387644726568]<br>'
+</font>,<br><font color="#008000">'55.726878,37.5259626'</font>) <i><font color="#808080">// грубые границы
+МКАД, точка в центре Москвы</font></i><br><br>вернет результат:
+<b><font color="#0000FF">true</font></b><br><br>
+@}
+
+function FIND_PT_IN_POLYGON(BorderPoints,WantedPoint:variant):boolean;
+var LSPoints:TStrings;
+S,Ln:string;
+i:integer;
+PtBorders: array of TGeoPoint;
+P:TGeoPoint;
+begin
+if BorderPoints=null then
+begin
+// debug(#13#10+'FindPtInPolygon:'+#13#10+'Не указан список координат полигона.');
+ exit;
+end;
+if WantedPoint=null then
+begin
+ //debug(#13#10+'FindPtInPolygon:'+#13#10+'Не указаны координаты искомой точки.');
+ exit;
+end;
+LsPoints:=TstringList.Create;
+PtBorders:=[];
+S:=VarToStr(BorderPoints);
+S:=CleanTags(S);
+S:=StringReplace(S,#13#10,';',[rfReplaceAll]);
+S:=StringReplace(S,' ','',[rfReplaceAll]);
+S:=StringReplace(Trim(S),'],[','];[',[rfReplaceAll]);
+SplitStr(S,';',LSPoints)
+LSPoints:=DeleteEmptyItems(LSPoints);
+SetLength(PtBorders,LSPoints.Count);
+  for i:=0 to LSPoints.Count-1 do
+    begin
+    Ln:=Copy(LSPoints[i],Pos('[',LSPoints[i])+1,Pos(']',
+    LSPoints[i])-Pos('[',LSPoints[i])-1);
+    p.x:=GeoToFloatPoint(Ln).x;
+    p.y:=GeoToFloatPoint(Ln).y;
+    PtBorders[i]:=p;
+    end;
+   p.x:=GeoToFloatPoint(Copy(LSPoints[0],Pos('[',LSPoints[0])+1,Pos(']',
+   LSPoints[0])-Pos('[',LSPoints[0])-1)).x;
+   p.y:=GeoToFloatPoint(Copy(LSPoints[0],Pos('[',LSPoints[0])+1,Pos(']',
+   LSPoints[0])-Pos('[',LSPoints[0])-1)).y;
+   PtBorders[LSPoints.Count-1]:=p;
+   result:=CheckFloatPointInPolygon(GeoToFloatPoint(WantedPoint),PtBorders);
+end;
+
+
+
+{******************************************************************************
+             ПОЛУЧИТЬ ЦЕНТР ПОЛИГОНА
+*******************************************************************************}
+
+{@function
+OrigName=GET_POLYGON_CENTER
+Name=GET_POLYGON_CENTER
+Args=v
+Result=s
+Group=Гео-функции
+Description=<font color="#800000"><b>Функция поиска приблизительного центра в
+массиве из множества координат.<br>Может использоваться в качестве указателя при
+открытии карты в брауере.</b></font><br><br><code><b>GET_POLYGON_CENTER(<font color="#008040">
+'Список координат'</font>)</code><br><br><b>Параметр запроса:</b> текст.<br><br>
+<i>Список координат формата: <br><code><font color="#008040">'[Ши.рота1,До.лгота1],
+[Ши.рота2,До.лгота2], [Ши.рота3,До.лгота3]...'</font></code>,<br>
+представляющих из себя замкнутую фигуру <font color="#FF0000">без пересечения
+выстраиваемых линий полигона.</font></i><br><br>
+<b>Результат:</b> текст.<br><br> <i>Координаты в формате: <font color="#008040">'Широта,Долгота'</i>
+</font><br><br><b>Пример:</b><br><br><code><b> GET_POLYGON_CENTER(</b>
+<font color="#008000">'<br>
+[55.79076368039028,37.29387644726568],<br>
+[55.938265134637064,37.46691111523443],<br>
+[55.9305564946382,37.71135691601567],<br>
+[55.77838199427918,37.92009715039068],<br>
+[55.617837378362175,37.91185740429692],<br>
+[55.542378292612014,37.66329173046879],<br>
+[55.59451507371311,37.449058332031285],<br>
+[55.79076368039028,37.29387644726568]<br>'
+</font>) <i><font color="#808080">// грубые границы
+МКАД</font></i><br><br>вернет приблизительные
+координаты центра:<br><br>
+<code><font color="#008040"><b>55.741814006947,37.630921299386</b>
+</font></code>
+@}
+
+function GET_POLYGON_CENTER(BorderPoints:variant):string;
+var LSPoints:TStrings;
+S,Ln,FirstLn:string;
+i,Count:integer;
+x,y:double;
+begin
+if BorderPoints=null then
+begin
+// debug(#13#10+'FindPtInPolygon:'+#13#10+'Не указан список координат полигона.');
+ exit;
+end;
+
+LsPoints:=TstringList.Create;
+S:=VarToStr(BorderPoints);
+S:=CleanTags(S); // нафик лишние теги
+S:=StringReplace(S,#13#10,';',[rfReplaceAll]);
+S:=StringReplace(S,' ','',[rfReplaceAll]);
+S:=StringReplace(Trim(S),'],[','];[',[rfReplaceAll]);
+SplitStr(S,';',LSPoints)
+LSPoints:=DeleteEmptyItems(LSPoints);
+  for i:=0 to LSPoints.Count-1 do  // -1 с замыкающей. Она не нужна.
+    begin
+    Ln:=Copy(LSPoints[i],Pos('[',LSPoints[i])+1,Pos(']',
+    LSPoints[i])-Pos('[',LSPoints[i])-1);
+    x:=x + GeoToFloatPoint(Ln).x;
+    y:=y + GeoToFloatPoint(Ln).y;
+    end;
+    FirstLn:=Copy(LSPoints[0],Pos('[',LSPoints[0])+1,Pos(']',
+    LSPoints[0])-Pos('[',LSPoints[0])-1);
+   if FirstLn = Ln then
+    begin
+    x:=x - GeoToFloatPoint(Ln).x;
+    y:=y - GeoToFloatPoint(Ln).y;
+    count:=i-1;
+    end else
+    count:=i;
+    x:=x/count;
+    y:=y/count;
+    result:=FloatToStr(x)+','+FloatToStr(y);
+end;
+
+{******************************************************************************
+     ОТКРЫТЬ КАРТУ В БРАУЗЕРЕ, УСТАНОВИТЬ ТОЧКУ В ЗАДАННОЙ ПОЗИЦИИ
+*******************************************************************************}
+
+{@function
+OrigName=VIEW_ON_YMAP
+Name=VIEW_ON_YMAP
+Args=v
+Result=
+Group=Гео-функции
+Description=<font color="#800000"><b>Функция открывает в браузере Яндекс-карту и ставит отметку на
+объект или в точку координат.</b></font><br><br>
+<code><b>VIEW_ON_YMAP(</b><font color="#008000">'Координаты, адрес или название организации'</font>)
+</code><br><br>
+Параметр запроса: <b>текст</b>.<br><br>
+<ul>
+<li>Координаты должны быть формата: <code><b><font color="#FF0000">'ши.рота,до.лгота'</font></b></code>.<br> </li>
+<li>Адрес и название организации могут быть произвольного вида, ошибки и погрешности автоматически
+корректируются самим сервисом Яндекс-карт.<br></li><br><br>
+<b>Примеры:</b><br><br>
+<code><b> VIEW_ON_YMAP(</b><font color="#008000">'55.7518,37.6229'</font>)
+</code><br>
+<code><b> VIEW_ON_YMAP(</b><font color="#008000">'масква твесркая 1'</font>)
+</code><br>
+<code><b> VIEW_ON_YMAP(</b><font color="#008000">'чоп витязь-рубеж краснодар'</font>)
+</code><br>
+@}
+
+procedure VIEW_ON_YMAP(v:variant);
+var s:string;
+begin
+if v=null then exit;
+s:=VarToStr(v);
+if IsCoordinates(s) then
+begin
+s:=EvalExpr('IndexOf(1,Replace("'+s+'",",",";"))+","+IndexOf(0,Replace("'+s+'",",",";"))',nil);
+ShellExecute('','https://yandex.ru/maps/?ll='+s+'&pt='+s,'','',5);
+end else
+ShellExecute('','https://yandex.ru/maps/?text='+s,'','',5);
+end;
+
+
